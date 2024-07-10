@@ -240,13 +240,13 @@ class Reporter:
             attacked = None if results[1]["result"].get("attacked") == None else results[1]["result"]["attacked"]["position"]
 
         for _ in range(2):
-            Reporter.__print_in_cell("  ")
+            Reporter._print_in_cell("  ")
             for i in range(Reporter.FIELD_SIZE):
-                Reporter.__print_in_cell(" " + str(i) + " ")
+                Reporter._print_in_cell(" " + str(i) + " ")
   
-        Reporter.__print_bars()
+        Reporter._print_bars()
         for y in range(Reporter.FIELD_SIZE):
-            Reporter.__print_in_cell(" " + str(y) + " ")
+            Reporter._print_in_cell(" " + str(y) + " ")
             for d in range(1+1):
                 for x in range(Reporter.FIELD_SIZE):
                     if d == 1-c and attacked == [x, y]:
@@ -256,35 +256,35 @@ class Reporter:
                     s = True
                     for ship in fleets[d].items():
                         if ship[1]["position"] == [x, y]:
-                            Reporter.__print_in_cell(ship[0] + str(ship[1]["hp"]))
+                            Reporter._print_in_cell(ship[0] + str(ship[1]["hp"]))
                             s = False
                             break
                     if s:
-                        Reporter.__print_in_cell("  ")
+                        Reporter._print_in_cell("  ")
                 if d == 0:
-                    Reporter.__print_in_cell("   ")
-            Reporter.__print_bars()
+                    Reporter._print_in_cell("   ")
+            Reporter._print_bars()
         print("\n",end="")
 
     # マスの縦線を描く．
     @staticmethod
-    def __print_in_cell(s):
+    def _print_in_cell(s):
         print(s + "|",end="")
 
     # マスの横線を描く．
     @staticmethod
-    def __print_bar():
+    def _print_bar():
         for _ in range(Reporter.FIELD_SIZE):
             print("----",end="")
 
     # マスの横線をつなげて描く．
     @staticmethod
-    def __print_bars():
+    def _print_bars():
         print("\n",end="")
         print("----",end="")
-        Reporter.__print_bar()
+        Reporter._print_bar()
         print("   -",end="")
-        Reporter.__print_bar()
+        Reporter._print_bar()
         print("\n",end="")
 
 #状況をレポートするかどうかを定めるグローバル変数

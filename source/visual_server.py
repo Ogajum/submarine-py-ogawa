@@ -193,52 +193,58 @@ class Server:
         }
 
 # 処理結果をわかりやすくみせるためクラスとして実装
-class VisualReporter:
+class VisualReporter(tk.Frame):
     GRID_SIZE = 120
-    DATA_UPDATE_CHECK_INTERVAL = 10
-    QUIT_CHECK_INTERVAL = 1000
-    def __init__(self,field_size):
+    
+    def __init__(self,master,field_size):
+        super().__init__(master)
+        self.pack()
+        #mainloopに入ったかどうかを保持する変数
+        self.hasEnteredMainloop = False
         #フィールドの大きさを初期化
         self.field_size = field_size
         #windowを初期化
-        self.window = tk.Tk()
-        self.window.title("Submarine Game")
-        self.window.geometry(f"{VisualReporter.GRID_SIZE*field_size}x{VisualReporter.GRID_SIZE*field_size}")
+        self.master.title("Submarine Game")
+        self.master.geometry(f"{VisualReporter.GRID_SIZE*field_size}x{VisualReporter.GRID_SIZE*field_size}")
         
         #キャンバスを設置
-        self.canvas = tk.Canvas(self.window,bg="#0022dd",height=VisualReporter.GRID_SIZE*field_size,width=VisualReporter.GRID_SIZE*field_size)
+        self._canvas = tk.Canvas(self,bg="#88ccff",height=VisualReporter.GRID_SIZE*field_size,width=VisualReporter.GRID_SIZE*field_size)
+        self._canvas.pack()
         
-        #guiを終了するための関数を準備(https://qiita.com/shiracamus/items/cd1d5f2d8fabd4e8a366 を参考に)
-        self.__willquit=False
-        self.window.after(VisualReporter.QUIT_CHECK_INTERVAL, self.__quit_check)
-        #割と何でも実行する関数を呼ぶ準備
-        self.func_kwargs_list = []
-        self.window.after(VisualReporter.DATA_UPDATE_CHECK_INTERVAL,self.__do_func_with_kwargs)
+        #情報保持用の辞書
+        self._loop_dict = {"func_and_kwargs":[]}
         
-        #別のスレッドとしてguiを起動
-        self.start_gui()
-        self.window_thread = threading.Thread(target=self.start_gui)
-        self.window_thread.start()
+        #独自のloop(1msおきに呼ばれる)を実行
+        self.after(1,self._loop)
         
-    def __do_func_with_kwargs(self):
-        for func, kwargs in self.func_kwargs_list:
-            func(**kwargs)
-    
-    def __quit_check(self):
-        if self.__willquit:
-            self.window.destroy()
-        else :
-            self.window.after(VisualReporter.QUIT_CHECK_INTERVAL, self.__quit_check)
+    def _loop(self):
+        if not self.hasEnteredMainloop:
+            self.hasEnteredMainloop = True
+        if self._loop_dict.get("quit") is not None and self._loop_dict["quit"] == True:
+            self.master.destroy() 
         
-    def start_gui(self):
-        self.window.mainloop()        
-    
-    def __del__(self):
-        self.__willquit = True
-        self.window_thread.join()
-    
-    # 結果をアスキーアートで出力する．
+        for fkg in self._loop_dict["func_and_kwargs"]:
+            fkg[0](**(fkg[1]))
+            
+        #次のループを1ms後に行う
+        self.after(1,self._loop)
+       
+    def end_report(self):
+        self._loop_dict["quit"] = True
+
     def report_field(self, result, c):
+        self._loop_dict["func_and_kwargs"].append(
+            (
+                self._report_field,
+                {
+                    "result":result,
+                    "c":c
+                }
+            )
+        )
+    
+    # 結果を画像で出力する関数の本体部分(現在はアスキーアートを出力していますが、tkinterを通じて画像を表示するようにすれば完成です)
+    def _report_field(self, result, c):
         results = [json.loads(result[0]), json.loads(result[1])]
 
         fleets = [results[c]["condition"]["me"], results[1-c]["condition"]["me"]]
@@ -248,13 +254,13 @@ class VisualReporter:
             attacked = None if results[1]["result"].get("attacked") == None else results[1]["result"]["attacked"]["position"]
 
         for _ in range(2):
-            self.__print_in_cell("  ")
+            self._print_in_cell("  ")
             for i in range(self.field_size):
-                self.__print_in_cell(" " + str(i) + " ")
+                self._print_in_cell(" " + str(i) + " ")
   
-        self.__print_bars()
+        self._print_bars()
         for y in range(self.field_size):
-            self.__print_in_cell(" " + str(y) + " ")
+            self._print_in_cell(" " + str(y) + " ")
             for d in range(1+1):
                 for x in range(self.field_size):
                     if d == 1-c and attacked == [x, y]:
@@ -264,32 +270,32 @@ class VisualReporter:
                     s = True
                     for ship in fleets[d].items():
                         if ship[1]["position"] == [x, y]:
-                            self.__print_in_cell(ship[0] + str(ship[1]["hp"]))
+                            self._print_in_cell(ship[0] + str(ship[1]["hp"]))
                             s = False
                             break
                     if s:
-                        self.__print_in_cell("  ")
+                        self._print_in_cell("  ")
                 if d == 0:
-                    self.__print_in_cell("   ")
-            self.__print_bars()
+                    self._print_in_cell("   ")
+            self._print_bars()
         print("\n",end="")
 
     # マスの縦線を描く．
-    def __print_in_cell(self,s):
+    def _print_in_cell(self,s):
         print(s + "|",end="")
 
     # マスの横線を描く．
-    def __print_bar(self):
+    def _print_bar(self):
         for _ in range(self.field_size):
             print("----",end="")
 
     # マスの横線をつなげて描く．
-    def __print_bars(self):
+    def _print_bars(self):
         print("\n",end="")
         print("----",end="")
-        self.__print_bar()
+        self._print_bar()
         print("   -",end="")
-        self.__print_bar()
+        self._print_bar()
         print("\n",end="")
 
 #状況をレポートするかどうかを定めるグローバル変数
@@ -301,7 +307,7 @@ RECV_BUFFER_SIZE = 4096
 # プレイヤーの行動をソケットから取得して処理し，結果を通知する．
 # 勝利したプレイヤーを返す．勝敗が決していない時は-1を返す．
 #
-def one_action(active, passive, c, server, vr = VisualReporter(Client.FIELD_SIZE)):
+def one_action(active, passive, c, server, vr:VisualReporter):
     act = active.readline()
     act = act[:act.find('\n')]#改行文字以外がjsonとしての値
     results = server.action(c, act)
@@ -319,9 +325,9 @@ def one_action(active, passive, c, server, vr = VisualReporter(Client.FIELD_SIZE
         return -1
 
 # TCPコネクション上で処理を行う．
-def main(args):
-    #盤面の用意
-    vr = VisualReporter(Client.FIELD_SIZE)
+def main(args,vr:VisualReporter):
+    #vrが起動するのを待つ
+    while not vr.hasEnteredMainloop : pass
     
     #接続の確立
     warnings.warn(f"listening {args.ipaddr} {args.port}")
@@ -369,6 +375,9 @@ def main(args):
     for client in clients:
         client.close()
     tcp_server.close()
+    
+    #VisualReporterに閉じる命令を出して終了
+    vr.end_report()
 
 
 parser = argparse.ArgumentParser()
@@ -380,4 +389,12 @@ if __name__ == "__main__": #直接実行したときのみ処理を行う(__FILE
     args = parser.parse_args()
     if args.quiet:
         verbose = False
-    main(args)
+    
+    #VisualReporterとmainは別のスレッドで動くため、VisualReporterは先にインスタンス化
+    root = tk.Tk()
+    vr = VisualReporter(root,Client.FIELD_SIZE)
+    #root.mainloop()をメインスレッドで動かすため、main関数はサブスレッドで動かす
+    main_func_th = threading.Thread(target=main,args = (args,vr,))   
+    main_func_th.start() 
+    #描画を開始
+    root.mainloop()
