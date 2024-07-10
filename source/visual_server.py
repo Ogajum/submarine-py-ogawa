@@ -208,8 +208,14 @@ class VisualReporter(tk.Frame):
         self.master.geometry(f"{VisualReporter.GRID_SIZE*field_size}x{VisualReporter.GRID_SIZE*field_size}")
         
         #キャンバスを設置
-        self._canvas = tk.Canvas(self,bg="#88ccff",height=VisualReporter.GRID_SIZE*field_size,width=VisualReporter.GRID_SIZE*field_size)
+        self._canvas = tk.Canvas(self,bg="#88ccff",height=VisualReporter.GRID_SIZE*self.field_size,width=VisualReporter.GRID_SIZE*self.field_size)
         self._canvas.pack()
+        
+        #線分を配置
+        self._lines = []
+        for i in range(1,self.field_size):
+            self._lines.append(self._canvas.create_line(i*VisualReporter.GRID_SIZE,0,i*VisualReporter.GRID_SIZE,self.field_size*VisualReporter.GRID_SIZE,fill="Blue"))
+            self._lines.append(self._canvas.create_line(0,i*VisualReporter.GRID_SIZE,self.field_size*VisualReporter.GRID_SIZE,i*VisualReporter.GRID_SIZE,fill="Blue"))
         
         #情報保持用の辞書
         self._loop_dict = {"func_and_kwargs":[]}
