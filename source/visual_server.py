@@ -367,7 +367,7 @@ def main(args,vr:VisualReporter):
         addresses.append(tmp[1])
         print(f"connected {i}")
         if verbose:
-            vr.message_in_title(f"conected {i}")
+            vr.message_in_title(f"connected {i}")
 
     for client in clients:
         client.write("you are connected. please send me initial state.\n")
@@ -384,7 +384,7 @@ def main(args,vr:VisualReporter):
         vr.report_field(server.initial_condition(c), c)
         #表示を待ってからゲームを進める
         while vr.has_unshowed_field: 
-            sleep(VisualReporter.INTERVAL/10000)
+            sleep(VisualReporter.INTERVAL/1000)
     while (winner == -1 and i < 10000):
         clients[c].write("your turn\n")
         clients[1-c].write("waiting\n")
@@ -393,7 +393,7 @@ def main(args,vr:VisualReporter):
         i += 1
         if verbose:
             while vr.has_unshowed_field: #次の手に進めるのは表示がすべて終わってから
-                sleep(VisualReporter.INTERVAL/10000)
+                sleep(VisualReporter.INTERVAL/1000)
     if winner == -1:
         for client in clients:
             client.write("even\n")
