@@ -4,7 +4,10 @@ import socket
 import argparse
 import warnings
 import tkinter as tk #GUIモジュール
+from PIL import Image, ImageTk #GUIモジュールで画像を表示するのに用いる
 import threading #スレッド処理モジュール
+import itertools
+from time import sleep
 
 # プレイヤーの船を表すクラスである．
 class Ship:
@@ -195,6 +198,9 @@ class Server:
 # 処理結果をわかりやすくみせるためクラスとして実装
 class VisualReporter(tk.Frame):
     GRID_SIZE = 120
+    INTERVAL = 1000
+    FIGS_PATH = "./figs"
+    SUBMARINES_PATH = f"{FIGS_PATH}/Submarines" 
     
     def __init__(self,master,field_size):
         super().__init__(master)
@@ -202,26 +208,54 @@ class VisualReporter(tk.Frame):
         #mainloopに入ったかどうかを保持する変数
         self.hasEnteredMainloop = False
         #フィールドの大きさを初期化
-        self.field_size = field_size
+        self._field_size = field_size
         #windowを初期化
         self.master.title("Submarine Game")
         self.master.geometry(f"{VisualReporter.GRID_SIZE*field_size}x{VisualReporter.GRID_SIZE*field_size}")
         
         #キャンバスを設置
-        self._canvas = tk.Canvas(self,bg="#88ccff",height=VisualReporter.GRID_SIZE*self.field_size,width=VisualReporter.GRID_SIZE*self.field_size)
+        self._canvas = tk.Canvas(self,bg="#88ccff",height=VisualReporter.GRID_SIZE*self._field_size,width=VisualReporter.GRID_SIZE*self._field_size)
         self._canvas.pack()
         
         #線分を配置
         self._lines = []
-        for i in range(1,self.field_size):
-            self._lines.append(self._canvas.create_line(i*VisualReporter.GRID_SIZE,0,i*VisualReporter.GRID_SIZE,self.field_size*VisualReporter.GRID_SIZE,fill="Blue"))
-            self._lines.append(self._canvas.create_line(0,i*VisualReporter.GRID_SIZE,self.field_size*VisualReporter.GRID_SIZE,i*VisualReporter.GRID_SIZE,fill="Blue"))
+        for i in range(1,self._field_size):
+            self._lines.append(self._canvas.create_line(i*VisualReporter.GRID_SIZE,0,i*VisualReporter.GRID_SIZE,self._field_size*VisualReporter.GRID_SIZE,fill="Blue"))
+            self._lines.append(self._canvas.create_line(0,i*VisualReporter.GRID_SIZE,self._field_size*VisualReporter.GRID_SIZE,i*VisualReporter.GRID_SIZE,fill="Blue"))
         
-        #情報保持用の辞書
-        self._loop_dict = {"func_and_kwargs":[]}
+        #画像のロード
+        self._explosion_img = Image.open(f"{VisualReporter.FIGS_PATH}/explosion.png")
+        self._submaline_imgs = {}
+        tmp = [{ f"{player}{name}{hp_var}":Image.open(f"{VisualReporter.SUBMARINES_PATH}/{color}{name.upper()}{hp_var}.png") 
+                for (player, color), hp_var in itertools.product(enumerate(["Blue","Red"]),range(1,hp_1+2))} 
+               for hp_1,name in enumerate(["s","c","w"])]
+        for d in tmp:
+            self._submaline_imgs = {**(self._submaline_imgs),**d}
+        #画像をリサイズ
+        self._explosion_img = self._explosion_img.resize((VisualReporter.GRID_SIZE*2//3,VisualReporter.GRID_SIZE*2//3))
+        for key in self._submaline_imgs.keys():
+            self._submaline_imgs[key] =  self._submaline_imgs[key].resize((VisualReporter.GRID_SIZE*2//3,VisualReporter.GRID_SIZE*10//18))
+        #画像のTkinterで扱えるPhotoImageクラスのオブジェクト化
+        self._explosion_img = ImageTk.PhotoImage(self._explosion_img)
+        for key in self._submaline_imgs.keys():
+            self._submaline_imgs[key] =  ImageTk.PhotoImage(self._submaline_imgs[key])
+        
+        #何回report_fieldが呼ばれたかによって今が何ターン目かを保持する変数
+        self.report_call_num = 0
+        #レポートするべきフィールドのリスト
+        self._field_list = []
+        #二重でreportfieldの列ができないようにするためのアフターキャンセル用変数
+        self._report_field_after_id = None
+        
+        #その他ループをまたいで保持したい変数をまとめる辞書
+        self._loop_dict = {}
         
         #独自のloop(1msおきに呼ばれる)を実行
         self.after(1,self._loop)
+        
+    @property
+    def has_unshowed_field(self):
+        return len(self._field_list)>0
         
     def _loop(self):
         if not self.hasEnteredMainloop:
@@ -229,9 +263,9 @@ class VisualReporter(tk.Frame):
         if self._loop_dict.get("quit") is not None and self._loop_dict["quit"] == True:
             self.master.destroy() 
         
-        for fkg in self._loop_dict["func_and_kwargs"]:
-            fkg[0](**(fkg[1]))
-            
+        if self.has_unshowed_field and self._report_field_after_id is None:
+            self._report_field_after_id = self.after(VisualReporter.INTERVAL,self._report_field)
+        
         #次のループを1ms後に行う
         self.after(1,self._loop)
        
@@ -239,70 +273,50 @@ class VisualReporter(tk.Frame):
         self._loop_dict["quit"] = True
 
     def report_field(self, result, c):
-        self._loop_dict["func_and_kwargs"].append(
-            (
-                self._report_field,
-                {
-                    "result":result,
-                    "c":c
-                }
-            )
-        )
+        self._field_list.append((result,c))
     
-    # 結果を画像で出力する関数の本体部分(現在はアスキーアートを出力していますが、tkinterを通じて画像を表示するようにすれば完成です)
-    def _report_field(self, result, c):
+    def _report_field(self):
+        result, c = self._field_list.pop(0)
+        
         results = [json.loads(result[0]), json.loads(result[1])]
 
         fleets = [results[c]["condition"]["me"], results[1-c]["condition"]["me"]]
         if results[1].get("result")== None:
             attacked = None
         else:
-            attacked = None if results[1]["result"].get("attacked") == None else results[1]["result"]["attacked"]["position"]
-
-        for _ in range(2):
-            self._print_in_cell("  ")
-            for i in range(self.field_size):
-                self._print_in_cell(" " + str(i) + " ")
-  
-        self._print_bars()
-        for y in range(self.field_size):
-            self._print_in_cell(" " + str(y) + " ")
-            for d in range(1+1):
-                for x in range(self.field_size):
-                    if d == 1-c and attacked == [x, y]:
-                        print("!",end="")
-                    else:
-                        print(" ",end="")
-                    s = True
+            attacked = None if results[1]["result"].get("attacked") is None else results[1]["result"]["attacked"]["position"]        
+        
+        #前回の盤面をすべて消去
+        self._canvas.delete("report_field")
+        
+        #ターン数の表示
+        self.message_in_title(f"Turn {self.report_call_num}")
+        self.report_call_num += 1
+        
+        #各グリッドについて潜水艦と爆発を表示
+        for y in range(self._field_size):            
+            for x in range(self._field_size):
+                for d in range(1+1):
                     for ship in fleets[d].items():
                         if ship[1]["position"] == [x, y]:
-                            self._print_in_cell(ship[0] + str(ship[1]["hp"]))
-                            s = False
+                            #dを位置に加え、さらに画像のアンカー位置も変えることで、プレイヤー0に関する情報はグリッドの左上に、プレイヤー1に関する情報はグリッドの右下に表示されるようにした
+                            self._canvas.create_image(VisualReporter.GRID_SIZE*(x+d), VisualReporter.GRID_SIZE*(y+d),
+                                image=self._submaline_imgs[f"{d}{ship[0]}{ship[1]['hp']}"], tags="report_field", anchor= tk.NW if d == 0 else tk.SE)
                             break
-                    if s:
-                        self._print_in_cell("  ")
-                if d == 0:
-                    self._print_in_cell("   ")
-            self._print_bars()
-        print("\n",end="")
+                    if d == 1-c and attacked == [x, y]:
+                        self._canvas.create_image(VisualReporter.GRID_SIZE*(x+d), VisualReporter.GRID_SIZE*(y+d), image=self._explosion_img, tags="report_field",
+                                                  anchor= tk.NW if d == 0 else tk.SE)
+        
+        #まだ表示しきっていないフィールドがあれば VisualReporter.INTERVAL ms 後に描画
+        if self.has_unshowed_field:
+            if self._report_field_after_id is not None:
+                self.after_cancel(self._report_field_after_id)
+            self._report_field_after_id = self.after(VisualReporter.INTERVAL,self._report_field)
+        else:
+            self._report_field_after_id = None
 
-    # マスの縦線を描く．
-    def _print_in_cell(self,s):
-        print(s + "|",end="")
-
-    # マスの横線を描く．
-    def _print_bar(self):
-        for _ in range(self.field_size):
-            print("----",end="")
-
-    # マスの横線をつなげて描く．
-    def _print_bars(self):
-        print("\n",end="")
-        print("----",end="")
-        self._print_bar()
-        print("   -",end="")
-        self._print_bar()
-        print("\n",end="")
+    def message_in_title(self,message):
+        self.master.title(f"Submarine Game : {message}")
 
 #状況をレポートするかどうかを定めるグローバル変数
 verbose = True
@@ -333,7 +347,8 @@ def one_action(active, passive, c, server, vr:VisualReporter):
 # TCPコネクション上で処理を行う．
 def main(args,vr:VisualReporter):
     #vrが起動するのを待つ
-    while not vr.hasEnteredMainloop : pass
+    while not vr.hasEnteredMainloop : 
+        pass
     
     #接続の確立
     warnings.warn(f"listening {args.ipaddr} {args.port}")
@@ -344,11 +359,15 @@ def main(args,vr:VisualReporter):
     #2つのclientと接続
     tcp_server.listen(2) 
     print("listening...")
+    if verbose:
+        vr.message_in_title("listening...")
     for i in range(2):
         tmp = tcp_server.accept()
         clients.append(tmp[0].makefile('rw',buffering=1))   #textfileのようなインターフェースを通じて通信 改行記号までが一つの通信として扱われる
         addresses.append(tmp[1])
         print(f"connected {i}")
+        if verbose:
+            vr.message_in_title(f"conected {i}")
 
     for client in clients:
         client.write("you are connected. please send me initial state.\n")
@@ -361,22 +380,36 @@ def main(args,vr:VisualReporter):
     i = 0
     # 行動プレイヤーを保持する変数．
     c = 0
-    if verbose : 
+    if verbose :
         vr.report_field(server.initial_condition(c), c)
+        #表示を待ってからゲームを進める
+        while vr.has_unshowed_field: 
+            sleep(VisualReporter.INTERVAL/10000)
     while (winner == -1 and i < 10000):
         clients[c].write("your turn\n")
         clients[1-c].write("waiting\n")
         winner = one_action(clients[c], clients[1-c], c, server,vr=vr)
         c = 1 - c
         i += 1
+        if verbose:
+            while vr.has_unshowed_field: #次の手に進めるのは表示がすべて終わってから
+                sleep(VisualReporter.INTERVAL/10000)
     if winner == -1:
         for client in clients:
             client.write("even\n")
         print("even")
+        vr.message_in_title("TIME OVER. EVEN!")
     else:
         clients[winner].write("you win\n")
         clients[1-winner].write("you lose\n")
         print("player" + str(1+winner) + " win")
+        vr.message_in_title(f"PLAYER {1+winner} WIN!!!")
+    
+    #勝利を確認する間
+    sleep(9)
+    vr.message_in_title("Closing...")
+    #ソフトが終了することを伝えるための間
+    sleep(1)
 
     for client in clients:
         client.close()
